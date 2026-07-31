@@ -43,6 +43,22 @@ Drop the onboard inference (`output_mb=800`) and the same satellite becomes
 downlink-bound: 1,728 GB/day of raw data against 72 GB/day of X-band capacity.
 That gap is the entire business case for processing in orbit.
 
+### Does a laser mesh fix it?
+
+```python
+link = op.LinkBudget(band="x_band", relay=op.RelayLink(
+    constellation_size=100, ground_stations=10))
+
+print(link.gb_per_day)             # 694 GB/day, up from 72
+print(link.relay.limiting_factor)  # 'ground segment'
+```
+
+Ten-fold more capacity — and the raw-downlink case is *still* infeasible. The
+optical terminals could carry ~600,000 GB/day; the constellation's share of ten
+ground stations is 622. Relaying through 100 satellites into 10 stations buys a
+tenth of ten stations. Widen the ground segment (20 sats / 30 stations → 9,400
+GB/day) and it finally closes.
+
 ## What it models
 
 **Power** — solar array output derated for cell efficiency, packing, eclipse
@@ -54,6 +70,13 @@ otherwise.
 
 **Downlink** — contact time × rate × passes, derated for protocol overhead, versus
 the data actually produced. Anything the payload can't process has to go down raw.
+
+**Inter-satellite relay** (optional) — a laser crosslink mesh. A mesh doesn't
+create bandwidth, it creates *reach*: instead of storing data until this
+satellite flies over a station, it hands off to a neighbour that can see one
+now. So it's capped by the crosslink **and** by this satellite's share of the
+constellation's total ground pipe — and in practice the ground segment binds
+first, which is the part most mesh plans get wrong.
 
 **Workload** — energy and latency per inference from real accelerator
 efficiency (peak TOPS derated by an achievable-utilisation factor, which is
