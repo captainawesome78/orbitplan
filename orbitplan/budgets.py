@@ -15,7 +15,7 @@ from .constants import (
     ARRAY_PACKING_FACTOR, BATTERY_ROUND_TRIP, PMAD_EFFICIENCY,
     BUS_POWER_OVERHEAD_W, STEFAN_BOLTZMANN, DEFAULT_EMISSIVITY,
     DEFAULT_RADIATOR_TEMP_C, DOWNLINK_RATES, DEFAULT_CONTACT_S,
-    DEFAULT_PASSES_PER_DAY,
+    DEFAULT_PASSES_PER_DAY, DEFAULT_ISL_RATE, DEFAULT_ISL_DUTY,
 )
 
 
@@ -118,13 +118,66 @@ class ThermalBudget:
 
 # ----------------------------------------------------------------- link ----
 @dataclass
+class RelayLink:
+    """Inter-satellite laser relay (crosslink mesh).
+
+    A mesh does not create bandwidth -- it creates *reach*. Instead of storing
+    data until this satellite flies over a station, it hands the data to a
+    neighbour that can see one now. Two things therefore cap it:
+
+    1. the crosslink itself (``isl_rate_bps`` while a usable path exists), and
+    2. this satellite's fair share of the constellation's total ground pipe.
+
+    The second is the one people forget: relaying through 100 satellites into
+    10 ground stations still only buys you a tenth of ten stations. If the
+    ground segment is thin, a mesh moves the bottleneck rather than removing it.
+    """
+    isl_rate_bps: float = DEFAULT_ISL_RATE
+    isl_duty: float = DEFAULT_ISL_DUTY        # fraction of orbit with a usable path
+    constellation_size: int = 100             # satellites sharing the ground segment
+    ground_stations: int = 10
+    station_rate_bps: float = None            # defaults to Ka-band
+    station_availability: float = 0.60        # weather/scheduling/horizon losses
+    efficiency: float = 0.80
+
+    def __post_init__(self):
+        if self.station_rate_bps is None:
+            self.station_rate_bps = DOWNLINK_RATES["ka_band"]
+        if self.constellation_size < 1:
+            raise ValueError("constellation_size must be >= 1")
+
+    @property
+    def isl_limit_gb_per_day(self) -> float:
+        """What the crosslink alone could carry."""
+        return (self.isl_rate_bps * 86400.0 * self.isl_duty
+                * self.efficiency / 8.0) / 1e9
+
+    @property
+    def ground_share_gb_per_day(self) -> float:
+        """This satellite's share of the constellation's total ground capacity."""
+        pool = (self.station_rate_bps * self.ground_stations * 86400.0
+                * self.station_availability * self.efficiency / 8.0) / 1e9
+        return pool / self.constellation_size
+
+    @property
+    def gb_per_day(self) -> float:
+        return min(self.isl_limit_gb_per_day, self.ground_share_gb_per_day)
+
+    @property
+    def limiting_factor(self) -> str:
+        return ("crosslink" if self.isl_limit_gb_per_day
+                < self.ground_share_gb_per_day else "ground segment")
+
+
+@dataclass
 class LinkBudget:
-    """Ground-contact capacity -- the ceiling on what can be downlinked raw."""
+    """Capacity to get data down: direct ground passes, plus optional ISL relay."""
     band: str = "x_band"
     rate_bps: float = None
     contact_s: float = DEFAULT_CONTACT_S
     passes_per_day: int = DEFAULT_PASSES_PER_DAY
     efficiency: float = 0.80          # coding/protocol overhead
+    relay: "RelayLink" = None         # set to model a laser crosslink mesh
 
     def __post_init__(self):
         if self.rate_bps is None:
@@ -140,5 +193,16 @@ class LinkBudget:
                 * self.efficiency / 8.0)
 
     @property
-    def gb_per_day(self) -> float:
+    def direct_gb_per_day(self) -> float:
+        """Capacity from this satellite's own ground passes."""
         return self.bytes_per_day / 1e9
+
+    @property
+    def relay_gb_per_day(self) -> float:
+        """Additional capacity contributed by the crosslink mesh."""
+        return self.relay.gb_per_day if self.relay else 0.0
+
+    @property
+    def gb_per_day(self) -> float:
+        """Total usable downlink capacity per day."""
+        return self.direct_gb_per_day + self.relay_gb_per_day

@@ -50,3 +50,7 @@ WORKLOADS = {
     "sar_segmenter": 200.0,
     "llm_1b_token": 2.0,
 }
+
+# --- Inter-satellite laser links ---
+DEFAULT_ISL_RATE = 100e9       # bits/s per optical terminal (operational-class)
+DEFAULT_ISL_DUTY = 0.70        # fraction of orbit with a usable relay path
