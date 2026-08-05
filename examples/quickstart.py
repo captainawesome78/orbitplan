@@ -70,3 +70,55 @@ show("CASE 5  balanced design - everything fits",
          link=op.LinkBudget(band="x_band"),
      ))
 
+
+
+# --- 6. does an inter-satellite laser mesh rescue the raw-downlink case? ----
+print("=" * 72)
+print("CASE 6  laser mesh relay - does reach beat storage?")
+print("=" * 72)
+for label, link in [
+    ("direct X-band only",
+     op.LinkBudget(band="x_band")),
+    ("mesh: 100 sats / 10 stations",
+     op.LinkBudget(band="x_band",
+                   relay=op.RelayLink(constellation_size=100, ground_stations=10))),
+    ("mesh: 20 sats / 30 stations",
+     op.LinkBudget(band="x_band",
+                   relay=op.RelayLink(constellation_size=20, ground_stations=30))),
+]:
+    r = op.MissionPlan(
+        sensor=op.Sensor(burst_gb_per_s=10, duty_cycle=0.002),
+        workload=op.Workload.preset("sar_segmenter", input_mb=800, output_mb=800),
+        accelerator=op.Accelerator.preset("jetson_agx_orin"),
+        power=op.PowerBudget(array_area_m2=8),
+        thermal=op.ThermalBudget(radiator_area_m2=2),
+        link=link,
+    ).evaluate()
+    print(f"  {label:30s} {r.downlink_capacity_gb_day:9.1f} GB/day -> {r.bottleneck}")
+    if link.relay:
+        print(f"  {'':30s} limited by the {link.relay.limiting_factor}")
+print()
+
+# --- 7. should this run in orbit at all? ------------------------------------
+print("=" * 72)
+print("CASE 7  placement economics - orbit vs terrestrial cloud")
+print("=" * 72)
+link = op.LinkBudget(band="x_band")
+for label, wl, n, gb in [
+    ("SAR, 1,728 GB/day",
+     op.Workload.preset("sar_segmenter", input_mb=800, output_mb=2), 2160, 1728),
+    ("cubesat, 5 GB/day",
+     op.Workload.preset("resnet50", input_mb=6, output_mb=0.005), 833, 5),
+]:
+    r = op.compare_placement(workload=wl, inferences_per_day=n,
+                             data_gb_per_day=gb, link=link)
+    print(f"\n-- {label}")
+    print(r.summary())
+
+print("\n-- same cubesat, but the data may not leave the spacecraft")
+r = op.compare_placement(
+    workload=op.Workload.preset("resnet50", input_mb=6, output_mb=0.005),
+    inferences_per_day=833, data_gb_per_day=5, link=link,
+    data_must_stay_onboard=True)
+print(r.message)
+print()
