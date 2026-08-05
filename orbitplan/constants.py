@@ -54,3 +54,10 @@ WORKLOADS = {
 # --- Inter-satellite laser links ---
 DEFAULT_ISL_RATE = 100e9       # bits/s per optical terminal (operational-class)
 DEFAULT_ISL_DUTY = 0.70        # fraction of orbit with a usable relay path
+
+# --- Placement economics (public list prices; override as they date) ---
+GS_COST_PER_MIN = 10.0            # USD/min, AWS Ground Station wideband reserved
+CLOUD_GPU_USD_PER_HOUR = 1.006    # USD/hr, EC2 g5.xlarge (A10G) on-demand
+CLOUD_GPU_TOPS = 250.0            # A10G INT8
+LAUNCH_COST_PER_KG = 1000.0       # USD/kg to LEO (order of magnitude, 2026)
+DEFAULT_MISSION_YEARS = 5.0
