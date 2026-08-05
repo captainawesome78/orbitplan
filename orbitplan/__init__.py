@@ -30,10 +30,14 @@ Quick start
 from .budgets import Orbit, PowerBudget, ThermalBudget, LinkBudget, RelayLink
 from .workload import Accelerator, Workload
 from .planner import MissionPlan, PlanResult, Sensor
+from .placement import (GroundOption, OrbitOption, PlacementResult,
+                        compare_placement)
 from . import constants
 
 __all__ = [
     "Orbit", "PowerBudget", "ThermalBudget", "LinkBudget", "RelayLink",
-    "Accelerator", "Workload", "Sensor", "MissionPlan", "PlanResult", "constants",
+    "Accelerator", "Workload", "Sensor", "MissionPlan", "PlanResult",
+    "GroundOption", "OrbitOption", "PlacementResult", "compare_placement",
+    "constants",
 ]
-__version__ = "0.2.0"
+__version__ = "0.3.0"
