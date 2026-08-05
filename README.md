@@ -113,3 +113,48 @@ isothermal radiator, and steady-state operation.
 ## License
 
 Apache-2.0
+
+
+## Should it run in orbit at all?
+
+`compare_placement()` answers the commercial question the feasibility engine
+doesn't: process onboard, or downlink everything and use a terrestrial cloud?
+
+```python
+r = op.compare_placement(
+    workload=op.Workload.preset("sar_segmenter", input_mb=800, output_mb=2),
+    inferences_per_day=2160,
+    data_gb_per_day=1728,
+    link=op.LinkBudget(band="x_band"),
+)
+print(r.winner)      # 'orbit'
+print(r.summary())
+```
+
+```
+ground  : $9,600.00/day (station $9,600.00 + compute $0.00)
+          needs 16.00 h of contact, 0.67 h available  <-- IMPOSSIBLE
+orbit   : $59.62/day (amortised $35.62 + station $24.00)
+winner  : orbit (161.0x cheaper)
+crossover: orbit wins above ~10.7 GB/day
+```
+
+The asymmetry that decides it: process in orbit and you downlink a *result*;
+process on the ground and you must first downlink *everything* -- and contact
+time is billed by the minute and rationed by orbital geometry. Past a few
+GB/day the ground option stops being expensive and starts being impossible.
+
+It is not biased toward orbit. Below the crossover it says so plainly:
+
+```
+winner  : ground (1.3x cheaper)
+verdict : Ground, 1.3x cheaper. At 5.0 GB/day there isn't enough data to
+          justify amortising $65,000 of hardware and launch.
+```
+
+Pass `data_must_stay_onboard=True` to model a sovereignty constraint -- the
+ground option is then disqualified on compliance, and the tool reports the
+premium you're paying rather than pretending it's cheaper.
+
+Prices default to public list rates (AWS Ground Station wideband, EC2 g5.xlarge)
+and are overridable via `GroundOption` / `OrbitOption` -- they date quickly.
