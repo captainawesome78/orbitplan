@@ -64,17 +64,22 @@ class OrbitOption:
     tripling the compute means tripling the silicon *and* carrying the extra
     power and radiator area to run it.
 
-    Defaults to 1.0 -- no fault tolerance priced at all. That default is not a
-    recommendation, it is backwards compatibility. A mission that flies
-    unprotected commodity compute and cares about its results is unusual; see
-    lab 5.
+    **Defaults to 1.15**, not 1.0. A mission flying commodity compute and caring
+    about its results will run *some* mitigation, so pricing protection at zero
+    biases every placement verdict toward orbit. 15% is the lightweight case --
+    periodic scrubbing and checksummed weights rather than full re-execution --
+    and it is deliberately at the cheap end. Set it to 1.0 only if you mean
+    "this mission does not check its results at all".
+
+    Versions of orbitplan before 0.4.0 behaved as 1.0. Pass
+    ``redundancy_factor=1.0`` to reproduce figures published against them.
     """
     payload_mass_kg: float = 25.0
     hardware_usd: float = 40_000.0        # space-qualified accelerator + avionics
     launch_usd_per_kg: float = LAUNCH_COST_PER_KG
     mission_years: float = DEFAULT_MISSION_YEARS
     station_usd_per_min: float = GS_COST_PER_MIN
-    redundancy_factor: float = 1.0        # 1.0 none | ~1.74 EMR-like | 3.0 classical 3-MR
+    redundancy_factor: float = 1.15       # 1.0 none | 1.15 scrub+checksum | ~1.74 EMR-like | 3.0 3-MR
 
     def __post_init__(self) -> None:
         if self.redundancy_factor < 1.0:
@@ -139,8 +144,8 @@ class PlacementResult:
             f"winner  : {self.winner} ({self._ratio_phrase()})",
         ]
         if self.redundancy_factor == 1.0:
-            L.append("          NB: fault tolerance is priced at zero "
-                     "(redundancy_factor=1.0) -- see lab 5")
+            L.append("          NB: fault tolerance priced at zero by explicit "
+                     "request (redundancy_factor=1.0)")
         if self.crossover_gb_per_day:
             L.append(f"crossover: orbit wins above ~{self.crossover_gb_per_day:,.1f} GB/day")
         L.append(f"verdict : {self.message}")
