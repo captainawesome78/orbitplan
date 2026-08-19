@@ -40,4 +40,4 @@ __all__ = [
     "GroundOption", "OrbitOption", "PlacementResult", "compare_placement",
     "constants",
 ]
-__version__ = "0.3.0"
+__version__ = "0.4.0"
