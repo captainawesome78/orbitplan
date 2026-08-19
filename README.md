@@ -59,6 +59,80 @@ ground stations is 622. Relaying through 100 satellites into 10 stations buys a
 tenth of ten stations. Widen the ground segment (20 sats / 30 stations → 9,400
 GB/day) and it finally closes.
 
+## Should it run in orbit at all?
+
+`compare_placement()` answers the commercial question the feasibility engine
+doesn't: process onboard, or downlink everything and use a terrestrial cloud?
+
+```python
+r = op.compare_placement(
+    workload=op.Workload.preset("sar_segmenter", input_mb=800, output_mb=2),
+    inferences_per_day=2160,
+    data_gb_per_day=1728,
+    link=op.LinkBudget(band="x_band"),
+)
+print(r.winner)      # 'orbit'
+print(r.summary())
+```
+
+```
+ground  : $9,600.00/day (station $9,600.00 + compute $0.00)
+          needs 16.00 h of contact, 0.67 h available  <-- IMPOSSIBLE
+orbit   : $64.96/day (amortised $40.96 + station $24.00), at 1.15x redundancy
+winner  : orbit (147.8x cheaper)
+crossover: orbit wins above ~11.7 GB/day
+```
+
+The asymmetry that decides it: process in orbit and you downlink a *result*;
+process on the ground and you must first downlink *everything* — and contact
+time is billed by the minute and rationed by orbital geometry. Past a few
+GB/day the ground option stops being expensive and starts being impossible.
+
+It is not biased toward orbit. Below the crossover it says so plainly:
+
+```
+winner  : ground (1.5x cheaper)
+verdict : Ground, 1.5x cheaper. At 5.0 GB/day there isn't enough data to
+          justify amortising $74,750 of hardware and launch.
+```
+
+Pass `data_must_stay_onboard=True` to model a sovereignty constraint — the
+ground option is then disqualified on compliance, and the tool reports the
+premium you're paying rather than pretending it's cheaper.
+
+Prices default to public list rates (AWS Ground Station wideband, EC2 g5.xlarge)
+and are overridable via `GroundOption` / `OrbitOption` — they date quickly.
+
+### Correctness isn't free — it's priced in
+
+A single-event upset can silently corrupt a result on commodity hardware, and every
+mitigation costs compute. `redundancy_factor` prices that, and **defaults to 1.15** —
+the lightweight case of periodic scrubbing and checksummed weights.
+
+```python
+for R in [1.0, 1.15, 1.74, 3.0]:
+    r = op.compare_placement(..., orbit=op.OrbitOption(redundancy_factor=R))
+    print(R, r.crossover_gb_per_day, r.winner)
+```
+
+```
+1.00   6.43 GB/day   orbit     # no protection at all
+1.15   7.39 GB/day   orbit     # default: scrubbing + checksums
+1.74  11.18 GB/day   ground    # EMR-like
+3.00  19.25 GB/day   ground    # classical 3-MR
+```
+
+The crossover moves roughly linearly with the factor, which makes it a bigger lever
+than launch price or hardware price — and on an 8 GB/day workload the verdict flips
+from orbit to ground at a factor of just **1.245**. Use `3.0` for classical triple
+modular redundancy; `1.74` approximates the Efficient Modular Redundancy of
+[Wang et al., ASPLOS '26](https://www.cs.columbia.edu/~junfeng/papers/radshield-asplos26.pdf),
+which reports 63% less runtime overhead than 3-MR.
+
+**Changed in 0.4.0.** Earlier versions behaved as `1.0`, silently pricing correctness at
+zero and biasing every verdict toward orbit. Pass `redundancy_factor=1.0` to reproduce
+figures published against 0.3.x.
+
 ## What it models
 
 **Power** — solar array output derated for cell efficiency, packing, eclipse
@@ -113,48 +187,3 @@ isothermal radiator, and steady-state operation.
 ## License
 
 Apache-2.0
-
-
-## Should it run in orbit at all?
-
-`compare_placement()` answers the commercial question the feasibility engine
-doesn't: process onboard, or downlink everything and use a terrestrial cloud?
-
-```python
-r = op.compare_placement(
-    workload=op.Workload.preset("sar_segmenter", input_mb=800, output_mb=2),
-    inferences_per_day=2160,
-    data_gb_per_day=1728,
-    link=op.LinkBudget(band="x_band"),
-)
-print(r.winner)      # 'orbit'
-print(r.summary())
-```
-
-```
-ground  : $9,600.00/day (station $9,600.00 + compute $0.00)
-          needs 16.00 h of contact, 0.67 h available  <-- IMPOSSIBLE
-orbit   : $59.62/day (amortised $35.62 + station $24.00)
-winner  : orbit (161.0x cheaper)
-crossover: orbit wins above ~10.7 GB/day
-```
-
-The asymmetry that decides it: process in orbit and you downlink a *result*;
-process on the ground and you must first downlink *everything* -- and contact
-time is billed by the minute and rationed by orbital geometry. Past a few
-GB/day the ground option stops being expensive and starts being impossible.
-
-It is not biased toward orbit. Below the crossover it says so plainly:
-
-```
-winner  : ground (1.3x cheaper)
-verdict : Ground, 1.3x cheaper. At 5.0 GB/day there isn't enough data to
-          justify amortising $65,000 of hardware and launch.
-```
-
-Pass `data_must_stay_onboard=True` to model a sovereignty constraint -- the
-ground option is then disqualified on compliance, and the tool reports the
-premium you're paying rather than pretending it's cheaper.
-
-Prices default to public list rates (AWS Ground Station wideband, EC2 g5.xlarge)
-and are overridable via `GroundOption` / `OrbitOption` -- they date quickly.
