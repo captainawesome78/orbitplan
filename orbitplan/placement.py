@@ -51,16 +51,43 @@ class GroundOption:
 
 @dataclass
 class OrbitOption:
-    """Process onboard; downlink only the result."""
+    """Process onboard; downlink only the result.
+
+    ``redundancy_factor`` prices radiation fault tolerance. Protecting compute
+    against single-event upsets costs compute: the classical mitigation is
+    triple modular redundancy (3-MR), which runs the workload three times and
+    votes, so ``redundancy_factor=3.0``. More efficient schemes exist -- e.g.
+    the Efficient Modular Redundancy of Wang et al., ASPLOS '26, which reports
+    63% less runtime overhead than 3-MR, implying roughly 1.74.
+
+    The factor scales both ``hardware_usd`` and ``payload_mass_kg``, because
+    tripling the compute means tripling the silicon *and* carrying the extra
+    power and radiator area to run it.
+
+    Defaults to 1.0 -- no fault tolerance priced at all. That default is not a
+    recommendation, it is backwards compatibility. A mission that flies
+    unprotected commodity compute and cares about its results is unusual; see
+    lab 5.
+    """
     payload_mass_kg: float = 25.0
     hardware_usd: float = 40_000.0        # space-qualified accelerator + avionics
     launch_usd_per_kg: float = LAUNCH_COST_PER_KG
     mission_years: float = DEFAULT_MISSION_YEARS
     station_usd_per_min: float = GS_COST_PER_MIN
+    redundancy_factor: float = 1.0        # 1.0 none | ~1.74 EMR-like | 3.0 classical 3-MR
+
+    def __post_init__(self) -> None:
+        if self.redundancy_factor < 1.0:
+            raise ValueError(
+                f"redundancy_factor must be >= 1.0 (got {self.redundancy_factor}); "
+                "a value below 1 would mean the protected workload costs less "
+                "than the unprotected one."
+            )
 
     @property
     def capex_usd(self) -> float:
-        return self.payload_mass_kg * self.launch_usd_per_kg + self.hardware_usd
+        r = self.redundancy_factor
+        return (self.payload_mass_kg * r) * self.launch_usd_per_kg + self.hardware_usd * r
 
     @property
     def amortised_usd_per_day(self) -> float:
@@ -90,6 +117,7 @@ class PlacementResult:
     crossover_gb_per_day: Optional[float]
     sensitivity_forced: bool
     message: str
+    redundancy_factor: float = 1.0
 
     def _ratio_phrase(self) -> str:
         if self.cost_ratio >= 1:
@@ -105,9 +133,14 @@ class PlacementResult:
             f"{self.ground_contact_hours_available:,.2f} h available"
             + ("" if self.ground_feasible else "  <-- IMPOSSIBLE"),
             f"orbit   : ${self.orbit_total_usd_day:,.2f}/day "
-            f"(amortised ${self.orbit_amortised_usd_day:,.2f} + station ${self.orbit_station_usd_day:,.2f})",
+            f"(amortised ${self.orbit_amortised_usd_day:,.2f} + station ${self.orbit_station_usd_day:,.2f})"
+            + ("" if self.redundancy_factor == 1.0
+               else f", at {self.redundancy_factor:g}x redundancy"),
             f"winner  : {self.winner} ({self._ratio_phrase()})",
         ]
+        if self.redundancy_factor == 1.0:
+            L.append("          NB: fault tolerance is priced at zero "
+                     "(redundancy_factor=1.0) -- see lab 5")
         if self.crossover_gb_per_day:
             L.append(f"crossover: orbit wins above ~{self.crossover_gb_per_day:,.1f} GB/day")
         L.append(f"verdict : {self.message}")
@@ -194,4 +227,5 @@ def compare_placement(
         crossover_gb_per_day=crossover,
         sensitivity_forced=forced,
         message=msg,
+        redundancy_factor=orbit.redundancy_factor,
     )
